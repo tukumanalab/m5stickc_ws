@@ -13,7 +13,7 @@
 ## gemini-cliのインストール
 
 - https://nodejs.org/ja/ より Node.js をダウンロードしてインストールする。
-- コマンドプロンプトを立ち上げ、 npm install -g @google/gemini-cli を実行する。
+- Node.js用コマンドプロンプト`Node.js command prompt`を立ち上げ、 npm install -g @google/gemini-cli を実行する。
 - コマンドプロンプトより、 gemini と実行する。
 - 1. Login with Google を選択する。
 - ブラウザが開くので、tukumanalab@gmail.com でログインする。
