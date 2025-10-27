@@ -16,3 +16,6 @@
 - Keep code compatible with Arduino IDE and PlatformIO
 - Use English for code comments
 - Test all code before committing
+
+## Library Usage
+- For M5StickC Plus projects, use `#include <M5StickCPlus.h>`.
