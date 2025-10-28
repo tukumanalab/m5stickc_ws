@@ -1,9 +1,21 @@
 #include <M5StickCPlus.h>
+#include <Wire.h>
 
-// ANGLE unit pin
-int sensorPin = 33;
-int last_sensorValue = 2048;  // center value
-int cur_sensorValue = 2048;
+// Joystick2 Unit I2C settings
+#define GROVE_SDA 32
+#define GROVE_SCL 33
+#define JOYSTICK2_ADDR 0x63
+#define JOYSTICK2_ADC_VALUE_8BITS_REG 0x10
+#define JOYSTICK2_BUTTON_REG 0x20
+
+// Joystick values
+int joyX = 128;  // center value (0-255)
+int joyY = 128;  // center value (0-255)
+bool joyButton = false;
+bool lastJoyButton = false;
+bool lastJoyDown = false;  // Track if joystick was down in last frame
+int centerX = 128;
+int centerY = 128;
 
 // Game settings
 const int BLOCK_SIZE = 10;
@@ -85,7 +97,9 @@ unsigned long buttonDelay = 200;
 void setup() {
   M5.begin();
   M5.Lcd.setRotation(0);  // Portrait mode (0 or 2)
-  pinMode(sensorPin, INPUT);
+
+  // Initialize I2C for Joystick2 Unit
+  Wire.begin(GROVE_SDA, GROVE_SCL);
 
   // Initialize IMU
   M5.IMU.Init();
@@ -101,6 +115,11 @@ void setup() {
   newPiece();
   displayScore();
   displayNextPiece();
+
+  // Calibrate joystick center position
+  readJoystick();
+  centerX = joyX;
+  centerY = joyY;
 }
 
 void loop() {
@@ -161,41 +180,31 @@ void loop() {
     return; // Skip rest of loop after drop
   }
 
-  // Handle ANGLE unit for left/right movement
-  cur_sensorValue = analogRead(sensorPin);
+  // Read Joystick2 Unit
+  readJoystick();
 
-  // Map ANGLE value to board position
-  // Calculate the actual width of current piece
-  int pieceWidth = 0;
-  int pieceMinX = 4, pieceMaxX = 0;
-  for (int y = 0; y < 4; y++) {
-    for (int x = 0; x < 4; x++) {
-      if (tetrominoes[currentPiece][currentRotation][y][x]) {
-        if (x < pieceMinX) pieceMinX = x;
-        if (x > pieceMaxX) pieceMaxX = x;
-      }
+  // Handle joystick X-axis for left/right movement
+  int relX = joyX - centerX;  // -128 to +127
+
+  // Only move if joystick is pushed significantly (deadzone)
+  if (abs(relX) > 30 && millis() - lastMove > moveDelay) {
+    int newX = currentX;
+    if (relX < -30) {
+      newX = currentX + 1;  // Right
+    } else if (relX > 30) {
+      newX = currentX - 1;  // Left
     }
-  }
-  pieceWidth = pieceMaxX - pieceMinX + 1;
 
-  // ANGLE 0 -> right edge
-  // ANGLE 2048 (center) -> middle
-  // ANGLE 4095 (max) -> left edge
-  int maxX = BOARD_WIDTH - pieceWidth;
-  int targetX = map(cur_sensorValue, 0, 4095, maxX, 0) - pieceMinX;
-  targetX = constrain(targetX, -pieceMinX, BOARD_WIDTH - 1 - pieceMaxX);
-
-  if (targetX != currentX && millis() - lastMove > 50) {
-    if (canMove(targetX, currentY, currentRotation)) {
+    if (newX != currentX && canMove(newX, currentY, currentRotation)) {
       erasePiece();
-      currentX = targetX;
+      currentX = newX;
       drawPiece();
       lastMove = millis();
     }
   }
 
-  // Handle A button for rotation
-  if (M5.BtnA.wasPressed() && millis() - lastButtonCheck > buttonDelay) {
+  // Handle joystick button for rotation
+  if (joyButton && !lastJoyButton && millis() - lastButtonCheck > buttonDelay) {
     int newRotation = (currentRotation + 1) % 4;
     if (canMove(currentX, currentY, newRotation)) {
       erasePiece();
@@ -204,6 +213,50 @@ void loop() {
     }
     lastButtonCheck = millis();
   }
+  lastJoyButton = joyButton;
+
+  // Handle M5StickC Plus buttons (A or B) for rotation
+  if ((M5.BtnA.wasPressed() || M5.BtnB.wasPressed()) && millis() - lastButtonCheck > buttonDelay) {
+    int newRotation = (currentRotation + 1) % 4;
+    if (canMove(currentX, currentY, newRotation)) {
+      erasePiece();
+      currentRotation = newRotation;
+      drawPiece();
+    }
+    lastButtonCheck = millis();
+  }
+
+  // Handle joystick Y-axis for hard drop
+  int relY = joyY - centerY;
+  bool joyDown = (relY < -100);  // Need to push joystick down very hard for hard drop
+
+  if (joyDown && !lastJoyDown) {
+    // Joystick pushed down - perform hard drop
+    erasePiece();
+    while (canMove(currentX, currentY + 1, currentRotation)) {
+      currentY++;
+    }
+    drawPiece();
+
+    // Lock immediately
+    lockPiece();
+    clearLines();
+    newPiece();
+    if (!canMove(currentX, currentY, currentRotation)) {
+      gameOver = true;
+      gameOverDisplayed = false;
+      // Play game over sound
+      M5.Beep.tone(200, 200);
+      delay(200);
+      M5.Beep.tone(150, 300);
+      M5.Beep.mute();
+    }
+    lastFall = millis();
+    lastJoyDown = joyDown;
+    delay(100);  // Debounce
+    return;  // Skip rest of loop after hard drop
+  }
+  lastJoyDown = joyDown;
 
   // Handle falling
   if (millis() - lastFall > fallDelay) {
@@ -415,4 +468,28 @@ void resetGame() {
   newPiece();
   displayScore();
   displayNextPiece();
+}
+
+// Read Joystick2 Unit values
+void readJoystick() {
+  // Read X and Y axis values
+  Wire.beginTransmission(JOYSTICK2_ADDR);
+  Wire.write(JOYSTICK2_ADC_VALUE_8BITS_REG);
+  Wire.endTransmission(false);
+
+  Wire.requestFrom(JOYSTICK2_ADDR, 2);
+  if (Wire.available() >= 2) {
+    joyX = Wire.read();
+    joyY = Wire.read();
+  }
+
+  // Read button state
+  Wire.beginTransmission(JOYSTICK2_ADDR);
+  Wire.write(JOYSTICK2_BUTTON_REG);
+  Wire.endTransmission(false);
+
+  Wire.requestFrom(JOYSTICK2_ADDR, 1);
+  if (Wire.available() >= 1) {
+    joyButton = (Wire.read() == 0);  // 0 = pressed
+  }
 }
