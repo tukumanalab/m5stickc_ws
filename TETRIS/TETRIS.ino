@@ -190,9 +190,9 @@ void loop() {
   if (abs(relX) > 30 && millis() - lastMove > moveDelay) {
     int newX = currentX;
     if (relX < -30) {
-      newX = currentX + 1;  // Right
-    } else if (relX > 30) {
       newX = currentX - 1;  // Left
+    } else if (relX > 30) {
+      newX = currentX + 1;  // Right
     }
 
     if (newX != currentX && canMove(newX, currentY, currentRotation)) {
@@ -228,7 +228,7 @@ void loop() {
 
   // Handle joystick Y-axis for hard drop
   int relY = joyY - centerY;
-  bool joyDown = (relY < -100);  // Need to push joystick down very hard for hard drop
+  bool joyDown = (relY > 100);  // Need to push joystick down very hard for hard drop
 
   if (joyDown && !lastJoyDown) {
     // Joystick pushed down - perform hard drop
