@@ -47,3 +47,7 @@
 
 もしエラーがでたら、
 - エラーメッセージをコピーして、Gemini CLI に貼り付ければ、直してくれます。
+
+# 参考資料
+
+- [AIといっしょに自分だけのゲームを作ってみよう](https://docs.google.com/presentation/d/1waNVJ_wdZQsfWmTJ5UMG0inMQpKQlcNFgVp3vfedxjM/edit?usp=sharing)
