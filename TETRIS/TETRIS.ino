@@ -144,12 +144,13 @@ void loop() {
   if (gameOver) {
     // Draw game over text only once
     if (!gameOverDisplayed) {
-      // Draw white background for game over text (taller)
-      M5.Lcd.fillRect(15, 95, 90, 60, WHITE);
-      M5.Lcd.setCursor(20, 100, 4);
-      M5.Lcd.setTextColor(RED);
+      // Draw white background for game over text (smaller)
+      M5.Lcd.fillRect(30, 50, 80, 35, WHITE);
+      M5.Lcd.setTextSize(2);
+      M5.Lcd.setTextColor(RED, WHITE);
+      M5.Lcd.setCursor(35, 55);
       M5.Lcd.print("GAME");
-      M5.Lcd.setCursor(20, 130, 4);
+      M5.Lcd.setCursor(35, 70);
       M5.Lcd.print("OVER");
       gameOverDisplayed = true;
     }
@@ -199,7 +200,39 @@ void loop() {
   // Read Joystick2 Unit
   readJoystick();
 
+  // Handle joystick Y-axis for hard drop (check FIRST, before horizontal movement)
+  int relY = joyY - centerY;
+  bool joyDown = (relY > 100);  // Need to push joystick down very hard for hard drop
+
+  if (joyDown && !lastJoyDown) {
+    // Joystick pushed down - perform hard drop
+    // No horizontal movement allowed during hard drop
+    erasePiece();
+    while (canMove(currentX, currentY + 1, currentRotation)) {
+      currentY++;
+    }
+    drawPiece();
+
+    // Lock immediately
+    lockPiece();
+    clearLines();
+    newPiece();
+    if (!canMove(currentX, currentY, currentRotation)) {
+      gameOver = true;
+      gameOverDisplayed = false;
+      // Play game over sound
+      playTone(200, 200);
+      playTone(150, 300);
+    }
+    lastFall = millis();
+    lastJoyDown = joyDown;
+    delay(100);  // Debounce
+    return;  // Skip rest of loop after hard drop
+  }
+  lastJoyDown = joyDown;
+
   // Handle joystick X-axis for left/right movement
+  // Only if NOT doing hard drop
   int relX = joyX - centerX;  // -128 to +127
 
   // Only move if joystick is pushed significantly (deadzone)
@@ -241,36 +274,6 @@ void loop() {
     }
     lastButtonCheck = millis();
   }
-
-  // Handle joystick Y-axis for hard drop
-  int relY = joyY - centerY;
-  bool joyDown = (relY > 100);  // Need to push joystick down very hard for hard drop
-
-  if (joyDown && !lastJoyDown) {
-    // Joystick pushed down - perform hard drop
-    erasePiece();
-    while (canMove(currentX, currentY + 1, currentRotation)) {
-      currentY++;
-    }
-    drawPiece();
-
-    // Lock immediately
-    lockPiece();
-    clearLines();
-    newPiece();
-    if (!canMove(currentX, currentY, currentRotation)) {
-      gameOver = true;
-      gameOverDisplayed = false;
-      // Play game over sound
-      playTone(200, 200);
-      playTone(150, 300);
-    }
-    lastFall = millis();
-    lastJoyDown = joyDown;
-    delay(100);  // Debounce
-    return;  // Skip rest of loop after hard drop
-  }
-  lastJoyDown = joyDown;
 
   // Handle falling
   if (millis() - lastFall > fallDelay) {
@@ -418,11 +421,21 @@ void clearLines() {
   }
 
   if (linesCleared > 0) {
-    score += linesCleared;
+    // Standard Tetris scoring system
+    if (linesCleared == 1) {
+      score += 40;  // Single
+    } else if (linesCleared == 2) {
+      score += 100;  // Double
+    } else if (linesCleared == 3) {
+      score += 300;  // Triple
+    } else if (linesCleared >= 4) {
+      score += 800;  // TETRIS!
+    }
+
     displayScore();
     drawBoard();
 
-    // --- Text and Sound Effects ---
+    // --- Sound Effects Only ---
     if (linesCleared == 1) {
       // Single
       playTone(1200, 80);
@@ -430,52 +443,18 @@ void clearLines() {
       // Double
       playTone(1000, 70);
       playTone(1400, 90);
-      
-      // Display "DOUBLE!" text
-      M5.Lcd.setCursor(BOARD_X + BOARD_WIDTH * BLOCK_SIZE + 5, BOARD_Y + 80);
-      M5.Lcd.setTextColor(TFT_YELLOW);
-      M5.Lcd.setTextSize(2);
-      M5.Lcd.print("DOUBLE!");
-      delay(1000); // Show text for a moment
-      M5.Lcd.fillRect(BOARD_X + BOARD_WIDTH * BLOCK_SIZE + 5, BOARD_Y + 80, 100, 20, BLACK);
     } else if (linesCleared == 3) {
       // Triple
       playTone(1000, 70);
       playTone(1400, 70);
       playTone(1800, 90);
-
-      // Display "TRIPLE!" text
-      M5.Lcd.setCursor(BOARD_X + BOARD_WIDTH * BLOCK_SIZE + 5, BOARD_Y + 80);
-      M5.Lcd.setTextColor(TFT_CYAN);
-      M5.Lcd.setTextSize(2);
-      M5.Lcd.print("TRIPLE!");
-      delay(1000); // Show text for a moment
-      M5.Lcd.fillRect(BOARD_X + BOARD_WIDTH * BLOCK_SIZE + 5, BOARD_Y + 80, 100, 20, BLACK);
     } else if (linesCleared >= 4) {
-      // TETRIS!
-      // Screen flash effect
-      M5.Lcd.fillScreen(TFT_WHITE);
-      delay(60);
-      
-      // Redraw the entire UI after the flash
-      drawBoard(); 
-      displayScore();
-      displayNextPiece();
-
-      // Powerful sound effect (descending arpeggio)
+      // TETRIS! - Powerful sound effect (descending arpeggio)
       playTone(2100, 50);
       playTone(1900, 50);
       playTone(1700, 50);
       playTone(1500, 150);
       playTone(800, 200);
-
-      // Display "TETRIS!" text
-      M5.Lcd.setCursor(BOARD_X + BOARD_WIDTH * BLOCK_SIZE + 5, BOARD_Y + 80);
-      M5.Lcd.setTextColor(TFT_RED);
-      M5.Lcd.setTextSize(2);
-      M5.Lcd.print("TETRIS!");
-      delay(1500); // Longer celebration
-      M5.Lcd.fillRect(BOARD_X + BOARD_WIDTH * BLOCK_SIZE + 5, BOARD_Y + 80, 100, 20, BLACK);
     }
   }
 }
@@ -495,9 +474,10 @@ void displayScore() {
   int displayX = BOARD_X + BOARD_WIDTH * BLOCK_SIZE + 5;
   int displayY = BOARD_Y + 5;
 
-  M5.Lcd.fillRect(displayX - 2, displayY, 32, 15, BLACK);
-  M5.Lcd.setCursor(displayX, displayY, 2);
-  M5.Lcd.setTextColor(WHITE);
+  M5.Lcd.fillRect(displayX - 2, displayY, 30, 10, BLACK);
+  M5.Lcd.setTextSize(1);
+  M5.Lcd.setCursor(displayX, displayY);
+  M5.Lcd.setTextColor(WHITE, BLACK);
   M5.Lcd.print(score);
 }
 
