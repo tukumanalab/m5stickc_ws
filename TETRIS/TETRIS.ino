@@ -8,6 +8,12 @@
 #define JOYSTICK2_ADC_VALUE_8BITS_REG 0x10
 #define JOYSTICK2_BUTTON_REG 0x20
 
+// Buzzer settings for M5StickC Plus v1.1
+#define BUZZER_PIN 2
+#define LEDC_CHANNEL 0
+#define LEDC_RESOLUTION 8
+#define BUZZER_VOLUME 128 // 0-255, 128 is a good starting point
+
 // Joystick values
 int joyX = 128;  // center value (0-255)
 int joyY = 128;  // center value (0-255)
@@ -94,6 +100,18 @@ unsigned long moveDelay = 150;
 unsigned long lastButtonCheck = 0;
 unsigned long buttonDelay = 200;
 
+// Custom tone functions using LEDC API
+void playTone(int frequency, int duration) {
+  if (frequency == 0) {
+      delay(duration);
+      return;
+  }
+  ledcChangeFrequency(BUZZER_PIN, frequency, LEDC_RESOLUTION);
+  ledcWrite(BUZZER_PIN, BUZZER_VOLUME);
+  delay(duration);
+  ledcWrite(BUZZER_PIN, 0); // Stop tone
+}
+
 void setup() {
   M5.begin();
   M5.Lcd.setRotation(0);  // Portrait mode (0 or 2)
@@ -104,8 +122,8 @@ void setup() {
   // Initialize IMU
   M5.IMU.Init();
 
-  // Initialize Speaker
-  M5.Beep.begin();
+  // Initialize Speaker (using LEDC for v1.1)
+  ledcAttach(BUZZER_PIN, 1000, LEDC_RESOLUTION);
 
   randomSeed(analogRead(0));
 
@@ -170,10 +188,8 @@ void loop() {
       gameOver = true;
       gameOverDisplayed = false;
       // Play game over sound
-      M5.Beep.tone(200, 200);
-      delay(200);
-      M5.Beep.tone(150, 300);
-      M5.Beep.mute();
+      playTone(200, 200);
+      playTone(150, 300);
     }
     lastFall = millis();
     delay(300); // Debounce shake
@@ -246,10 +262,8 @@ void loop() {
       gameOver = true;
       gameOverDisplayed = false;
       // Play game over sound
-      M5.Beep.tone(200, 200);
-      delay(200);
-      M5.Beep.tone(150, 300);
-      M5.Beep.mute();
+      playTone(200, 200);
+      playTone(150, 300);
     }
     lastFall = millis();
     lastJoyDown = joyDown;
@@ -272,9 +286,8 @@ void loop() {
       if (!canMove(currentX, currentY, currentRotation)) {
         gameOver = true;
         // Play game over sound
-        M5.Beep.tone(200, 200);
-        delay(200);
-        M5.Beep.tone(150, 300);
+        playTone(200, 200);
+        playTone(150, 300);
       }
     }
     lastFall = millis();
@@ -383,6 +396,13 @@ void clearLines() {
 
     if (fullLine) {
       linesCleared++;
+      
+      // Flash effect
+      for (int x = 0; x < BOARD_WIDTH; x++) {
+        M5.Lcd.fillRect(BOARD_X + x * BLOCK_SIZE, BOARD_Y + y * BLOCK_SIZE, BLOCK_SIZE - 1, BLOCK_SIZE - 1, TFT_WHITE);
+      }
+      delay(50);
+
       // Shift lines down
       for (int yy = y; yy > 0; yy--) {
         for (int x = 0; x < BOARD_WIDTH; x++) {
@@ -393,7 +413,7 @@ void clearLines() {
       for (int x = 0; x < BOARD_WIDTH; x++) {
         board[0][x] = 0;
       }
-      y++; // Check this line again
+      y++;
     }
   }
 
@@ -402,12 +422,61 @@ void clearLines() {
     displayScore();
     drawBoard();
 
-    // Play line clear sound
-    for (int i = 0; i < linesCleared; i++) {
-      M5.Beep.tone(800 + i * 200, 100);
-      delay(100);
+    // --- Text and Sound Effects ---
+    if (linesCleared == 1) {
+      // Single
+      playTone(1200, 80);
+    } else if (linesCleared == 2) {
+      // Double
+      playTone(1000, 70);
+      playTone(1400, 90);
+      
+      // Display "DOUBLE!" text
+      M5.Lcd.setCursor(BOARD_X + BOARD_WIDTH * BLOCK_SIZE + 5, BOARD_Y + 80);
+      M5.Lcd.setTextColor(TFT_YELLOW);
+      M5.Lcd.setTextSize(2);
+      M5.Lcd.print("DOUBLE!");
+      delay(1000); // Show text for a moment
+      M5.Lcd.fillRect(BOARD_X + BOARD_WIDTH * BLOCK_SIZE + 5, BOARD_Y + 80, 100, 20, BLACK);
+    } else if (linesCleared == 3) {
+      // Triple
+      playTone(1000, 70);
+      playTone(1400, 70);
+      playTone(1800, 90);
+
+      // Display "TRIPLE!" text
+      M5.Lcd.setCursor(BOARD_X + BOARD_WIDTH * BLOCK_SIZE + 5, BOARD_Y + 80);
+      M5.Lcd.setTextColor(TFT_CYAN);
+      M5.Lcd.setTextSize(2);
+      M5.Lcd.print("TRIPLE!");
+      delay(1000); // Show text for a moment
+      M5.Lcd.fillRect(BOARD_X + BOARD_WIDTH * BLOCK_SIZE + 5, BOARD_Y + 80, 100, 20, BLACK);
+    } else if (linesCleared >= 4) {
+      // TETRIS!
+      // Screen flash effect
+      M5.Lcd.fillScreen(TFT_WHITE);
+      delay(60);
+      
+      // Redraw the entire UI after the flash
+      drawBoard(); 
+      displayScore();
+      displayNextPiece();
+
+      // Powerful sound effect (descending arpeggio)
+      playTone(2100, 50);
+      playTone(1900, 50);
+      playTone(1700, 50);
+      playTone(1500, 150);
+      playTone(800, 200);
+
+      // Display "TETRIS!" text
+      M5.Lcd.setCursor(BOARD_X + BOARD_WIDTH * BLOCK_SIZE + 5, BOARD_Y + 80);
+      M5.Lcd.setTextColor(TFT_RED);
+      M5.Lcd.setTextSize(2);
+      M5.Lcd.print("TETRIS!");
+      delay(1500); // Longer celebration
+      M5.Lcd.fillRect(BOARD_X + BOARD_WIDTH * BLOCK_SIZE + 5, BOARD_Y + 80, 100, 20, BLACK);
     }
-    M5.Beep.mute();
   }
 }
 
